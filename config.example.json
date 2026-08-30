@@ -1,0 +1,19 @@
+{
+  "digestOutputDir": "C:\\GitSource\\notebooklm-toolkit\\out",
+  "ingestStateFile": "C:\\GitSource\\notebooklm-toolkit\\state\\ingest-state.json",
+  "watchTasks": [
+    {
+      "name": "example-existing-notebook",
+      "folder": "D:\\path\\to\\watch\\folder",
+      "extensions": [".pdf", ".txt", ".md", ".docx"],
+      "mode": "existing",
+      "notebookId": "REPLACE_WITH_NOTEBOOK_ID"
+    },
+    {
+      "name": "example-new-batch-per-run",
+      "folder": "D:\\path\\to\\another\\folder",
+      "extensions": [".mp3", ".mp4", ".wav"],
+      "mode": "new"
+    }
+  ]
+}

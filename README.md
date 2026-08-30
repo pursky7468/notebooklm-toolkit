@@ -46,6 +46,25 @@
 
 問題經 **stdin**(`--prompt-file -`)傳給 notebooklm,不走 argv,因此含引號、換行、中文都不會被 PowerShell 的參數處理破壞。
 
+### -Brief:壓縮輸出
+
+NotebookLM 預設回答很長。`-Brief` 會在每個問題後附加簡潔指令:
+
+```powershell
+.\nb-digest.ps1 -Notebook <id> -Question @('...') -Brief
+```
+
+實測(同一個 notebook、同樣 4 個問題):
+
+| 模式 | 輸出大小 |
+|---|---|
+| 預設 | 50,791 bytes |
+| `-Brief` | 2,379 bytes(**21 倍**) |
+
+關鍵事實與結論都保留,但有代價:
+
+> **`-Brief` 會失去引用溯源。** NotebookLM 對簡短條列式回答不回傳 reference 物件(實測 `references: 0`),內文的 `[n]` 標記會變成無法解析。需要引用溯源時不要加 `-Brief`。
+
 ### nb-doctor — 健檢與故障分類
 
 ```powershell

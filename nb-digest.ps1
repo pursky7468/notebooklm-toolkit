@@ -32,6 +32,7 @@ param(
     [Parameter(Mandatory)][string[]]$Question,
     [string]$OutDir,
     [switch]$NewConversation,
+    [switch]$Brief,
     [string]$ConfigPath
 )
 
@@ -58,6 +59,10 @@ if (-not (Test-Path -LiteralPath $OutDir)) {
 
 if ($NewConversation) {
     Write-NbWarn "--NewConversation: this permanently deletes the notebook's existing server-side conversation before asking. This cannot be undone."
+}
+
+if ($Brief) {
+    Write-NbWarn "-Brief: NotebookLM returns no reference objects for short bulleted answers, so this digest will have no References section. Inline [n] markers may still appear but cannot be resolved. Omit -Brief when citation traceability matters."
 }
 
 # Resolve the notebook's title for the report header and filename.
@@ -107,7 +112,15 @@ foreach ($q in $Question) {
     }
     $askArgs += @('-n', $Notebook, '--prompt-file', '-', '--json')
 
-    $askResult = Invoke-NotebookLM -Arguments $askArgs -StdinInput $q
+    # NotebookLM answers at length by default, which works against the whole
+    # point of this toolkit. -Brief prepends a concision directive so the
+    # digest stays small enough to hand straight to an agent.
+    $prompt = $q
+    if ($Brief) {
+        $prompt = "$q`n`n[FORMAT] Answer in bullet points, 300 characters maximum. State only conclusions and key facts. Do not elaborate, do not restate the question, and do not end with follow-up suggestions or offers. Answer in the same language as the question."
+    }
+
+    $askResult = Invoke-NotebookLM -Arguments $askArgs -StdinInput $prompt
 
     if ($askResult.ExitCode -ne 0) {
         $results.Add([PSCustomObject]@{
@@ -154,6 +167,7 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine("- Notebook ID: $notebookId")
 [void]$sb.AppendLine("- Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
 [void]$sb.AppendLine("- New conversation started: $($NewConversation.IsPresent)")
+[void]$sb.AppendLine("- Brief mode: $($Brief.IsPresent)")
 [void]$sb.AppendLine("")
 
 foreach ($r in $results) {

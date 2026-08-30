@@ -56,6 +56,24 @@
 
 review 同時確認:全專案無任何 `notebook delete` 指令、憑證僅由底層 CLI 內部讀取、腳本全面使用 `-LiteralPath`。
 
+## 實際素材測試(x-ai-news-researcher 週報,2026-08-30)
+
+素材:`x-ai-news-researcher` 的 `backend/dev.db`,取 2026-08-22~28 每天 `relevance_score` 第一名的 URL(專案自身的排序慣例,見 `app/store/news_store.py:248`),共 7 筆。
+
+| 步驟 | 結果 |
+|---|---|
+| `nb-ingest -Path <7 個 URL 陣列>` | success 7 / skip 0 / fail 0,**單次呼叫** |
+| `nb-inspect` | 正確列出 7 個 source,並暴露 2 個資料問題(見下) |
+| `nb-digest`(預設) | 50,791 bytes,4 題皆有引用(33/20/30 筆) |
+| `nb-digest -Brief` | 2,379 bytes(21 倍壓縮),關鍵事實保留,但 `references: 0` |
+
+**這次測試發現並修掉的問題:**
+
+1. `-Path` 原為單一 `[string]`,批次 URL 要呼叫 7 次 → 改為 `[string[]]`,一次呼叫、一次 state 儲存、一份合併摘要
+2. `-Brief` 的格式指令原本寫成中文字串常值,而全部 `.ps1` 皆無 BOM,PS 5.1 以 cp950 解碼導致字串被破壞、腳本無法解析(doctrine R3 的字串常值版本)→ 改為 ASCII
+
+**工作流誠實性驗證:** 7 個來源中有 2 個實際無內容(r/MachineLearning 貼文已被版主刪除、HN 只抓到導覽列)。digest 在被問到時**正確指認這兩筆並未編造內容**,兩種模式皆然。
+
 ## 已知未驗證項
 
 - `nb-doctor` exit 2(RPC / 解碼失敗)與 exit 3(上游有新版)兩條分支無法在真實環境自然觸發,僅以假 CLI 替身驗過分支邏輯。真正觸發時的行為需待上游實際改版才能確認

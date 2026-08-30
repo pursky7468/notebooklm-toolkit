@@ -30,7 +30,7 @@
 #>
 [CmdletBinding(PositionalBinding=$false)]
 param(
-    [string]$Path,
+    [string[]]$Path,
     [string]$Notebook,
     [string[]]$Extensions,
     [switch]$Watch,
@@ -308,9 +308,14 @@ elseif ($Path) {
         Write-NbError "-Notebook is required with -Path"
         exit 1
     }
-    $r = Invoke-ManualIngest -Path $Path -NotebookId $Notebook -Extensions $Extensions -State $state -StateFile $StateFile
-    $totalSuccess += $r.Success; $totalSkip += $r.Skip; $totalFail += $r.Fail
-    foreach ($d in $r.FailDetails) { $allFailDetails.Add($d) }
+    # -Path takes an array so a batch of files or URLs is one call, one
+    # state save, and one combined summary.
+    foreach ($singlePath in $Path) {
+        if ([string]::IsNullOrWhiteSpace($singlePath)) { continue }
+        $r = Invoke-ManualIngest -Path $singlePath -NotebookId $Notebook -Extensions $Extensions -State $state -StateFile $StateFile
+        $totalSuccess += $r.Success; $totalSkip += $r.Skip; $totalFail += $r.Fail
+        foreach ($d in $r.FailDetails) { $allFailDetails.Add($d) }
+    }
 }
 else {
     Write-NbError "Specify either -Path <file|folder|url> -Notebook <id>, or -Watch"

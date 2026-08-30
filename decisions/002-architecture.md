@@ -60,3 +60,26 @@ PS 5.1 呼叫原生 exe 有兩個已知陷阱:空字串參數被靜默丟棄、`
 `notebooklm ask --json` 的 references 含 `cited_text` —— 也就是**來源全文**。原本直接 `ConvertTo-Json` 倒進摘要,等於把要省的 token 又塞回去。
 
 改為以 `source list --json` 建立 `source_id → title` 對映,渲染成 `- [N] <檔名> -- <120 字截斷片段>`。單筆引用從 ~700 bytes 降到 ~150 bytes。
+
+## 為什麼移除 MCP 註冊(2026-08-30)
+
+session 最初裝過 `notebooklm` MCP server,後來移除。決策依據是實測,不是偏好。
+
+**曾經的理由(已證實錯誤)**:以為 MCP 才能做「互動式追問」,CLI 只能單次批次。
+
+**實測推翻**:兩個完全獨立的行程呼叫 `notebooklm ask`,回傳同一個 `conversation_id`,`turn_number` 從 11 遞增到 12,且第二次的問題「你剛剛列的第二種模式,實務上有什麼風險?」被正確解析。
+
+原因:**對話狀態存在 NotebookLM 伺服器端,不在 client 行程裡**。所以 `ask` 預設就會延續對話,與呼叫端是否為同一行程無關 —— 這也是 `--new` 必須是明確 opt-in 的原因。
+
+**移除的實際理由**:
+
+| | MCP | 工具包 + 直接呼叫 CLI |
+|---|---|---|
+| 對話延續 | 有 | 有(相同機制) |
+| 33 個 tool | 打包好 | 直接下 `notebooklm <cmd>` |
+| context 成本 | 33 個 tool schema 常駐 | 用到才花 |
+| 憑證爭用 | 啟動即 `RotateCookies`,會踩 CLI 憑證 | 無 |
+
+MCP 沒有提供任何工具包做不到的事,卻多兩個成本。其中憑證爭用是實際發生過的事故:診斷 MCP 連線問題時反覆啟動並中途 kill,輪替後的 cookie 未寫回,導致 CLI 憑證一併失效。
+
+**保留的東西**:`notebooklm-py` 套件、`notebooklm.exe`、`notebooklm-mcp.exe`、憑證全部保留。只移除 `~/.claude.json` 的註冊。要恢復隨時可以 `claude mcp add`。

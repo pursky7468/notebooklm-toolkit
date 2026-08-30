@@ -80,9 +80,29 @@ if (-not $localChecksOk) {
         -Code 1
 }
 
+# A live token fetch can fail for two very different reasons, and the local
+# cookie checks cannot tell them apart: the stored cookies are structurally
+# fine in both cases. If the upstream error says the session expired, this is
+# a self-fixable re-login (code 1), not a broken reverse-engineered API
+# (code 2). Misclassifying it sends the user to an agent for something a
+# 'notebooklm login' would fix in seconds.
+$authErrorText = [string]$authError
+$looksLikeExpiredSession = $authErrorText -match '(?i)authentication expired|expired or invalid|re-authenticate|notebooklm login'
+
+if ($authJson.checks.token_fetch -eq $false -and $looksLikeExpiredSession) {
+    Write-DoctorResult -Status 'error' `
+        -Message "The stored session is no longer accepted by Google. Self-fix: run 'notebooklm login' to re-authenticate." `
+        -Detail ([PSCustomObject]@{
+            storage_path = $storagePath
+            checks       = $safeChecks
+            error        = $authError
+        }) `
+        -Code 1
+}
+
 if ($authJson.checks.token_fetch -eq $false) {
     Write-DoctorResult -Status 'error' `
-        -Message "Local credentials look valid, but a live token fetch from NotebookLM failed. This looks like an upstream RPC/decoding failure (or a network outage) -- needs agent maintenance." `
+        -Message "Local credentials look valid and the session is not reported as expired, but a live token fetch failed. This looks like an upstream RPC/decoding failure (or a network outage) -- needs agent maintenance." `
         -Detail ([PSCustomObject]@{
             storage_path = $storagePath
             checks       = $safeChecks

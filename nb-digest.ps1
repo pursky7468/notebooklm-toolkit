@@ -62,7 +62,7 @@ if ($NewConversation) {
 }
 
 if ($Brief) {
-    Write-NbWarn "-Brief: NotebookLM returns no reference objects for short bulleted answers, so this digest will have no References section. Inline [n] markers may still appear but cannot be resolved. Omit -Brief when citation traceability matters."
+    Write-NbWarn "-Brief: references are unreliable in this mode. A short bulleted answer sometimes comes back with no reference objects at all, leaving inline [n] markers unresolvable. Observed both with and without references; check the output, and omit -Brief when citation traceability must be guaranteed."
 }
 
 # Resolve the notebook's title for the report header and filename.

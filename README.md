@@ -35,6 +35,19 @@
 
 已處理檔案以「路徑 + 大小 + mtime」記錄在 `state\ingest-state.json`,重跑不會重傳;檔案改動後會自動重傳。
 
+### -Wait:等待來源處理完成
+
+上傳只是把來源排進佇列,NotebookLM 還要解析或**轉錄**。音訊/影片尤其明顯 —— 40 分鐘的節目幾秒就上傳完,但之後會停在 `preparing` 一分鐘以上。ingest 完立刻 digest 會問到空的。
+
+```powershell
+.\nb-ingest.ps1 -Path "D:\podcast" -Notebook <id> -Extensions @('mp3') -Wait
+.\nb-ingest.ps1 -Watch -Wait -WaitTimeoutSeconds 900     # 排程建議加上
+```
+
+輪詢所有本次寫入過的 notebook,直到沒有來源處於 `preparing` / `processing` / `pending` / `uploading`。有來源處理失敗或逾時 → exit 1。
+
+**排程一律加 `-Wait`**,否則下游的 digest 會拿到還沒轉錄完的來源。
+
 ### nb-digest — 提問並輸出摘要
 
 ```powershell
@@ -61,9 +74,9 @@ NotebookLM 預設回答很長。`-Brief` 會在每個問題後附加簡潔指令
 | 預設 | 50,791 bytes |
 | `-Brief` | 2,379 bytes(**21 倍**) |
 
-關鍵事實與結論都保留,但有代價:
+關鍵事實與結論都保留,但引用不可靠:
 
-> **`-Brief` 會失去引用溯源。** NotebookLM 對簡短條列式回答不回傳 reference 物件(實測 `references: 0`),內文的 `[n]` 標記會變成無法解析。需要引用溯源時不要加 `-Brief`。
+> **`-Brief` 的引用溯源不保證存在。** 實測兩種結果都出現過:AI 週報那次(對話已進行到第 12 輪)回傳 `references: 0`,內文的 `[n]` 標記無法解析;podcast 那次(全新對話)則正常回傳 10/6/4 筆引用。目前無法確定觸發條件,推測與對話輪次有關。**需要保證引用溯源時不要加 `-Brief`。**
 
 ### nb-doctor — 健檢與故障分類
 

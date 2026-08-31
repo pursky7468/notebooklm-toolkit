@@ -34,6 +34,8 @@ param(
     [string]$Notebook,
     [string[]]$Extensions,
     [switch]$Watch,
+    [switch]$Wait,
+    [int]$WaitTimeoutSeconds = 600,
     [string]$TaskName,
     [string]$ConfigPath,
     [string]$StateFile
@@ -110,6 +112,46 @@ function Add-OneSource {
     return $result
 }
 
+# Notebooks that received at least one new source in this run. Uploading only
+# queues the source; NotebookLM still has to parse or transcribe it, and a
+# pipeline that digests immediately after ingesting would query an empty
+# source. Audio and video are where this bites -- a 40 minute episode uploads
+# in seconds but stays in 'preparing' for a minute or more afterwards.
+$script:TouchedNotebooks = New-Object System.Collections.Generic.HashSet[string]
+
+function Wait-ForSourcesReady {
+    param([string]$NotebookId, [int]$TimeoutSeconds)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $pendingStates = @('preparing', 'processing', 'pending', 'uploading')
+    while ((Get-Date) -lt $deadline) {
+        $listed = Invoke-NotebookLM -Arguments @('source', 'list', '-n', $NotebookId, '--json')
+        if ($listed.ExitCode -ne 0) {
+            Write-NbWarn "Could not list sources while waiting: $((Get-NbFailureText $listed))"
+            return $false
+        }
+        try { $parsed = $listed.StdOut | ConvertFrom-Json } catch {
+            Write-NbWarn "Could not parse source list while waiting: $($_.Exception.Message)"
+            return $false
+        }
+        $items = if ($null -ne $parsed -and $parsed.PSObject.Properties.Name -contains 'sources') {
+                     @($parsed.sources)
+                 } else { @($parsed) }
+        $busy = @($items | Where-Object { $pendingStates -contains ([string]$_.status).ToLowerInvariant() })
+        $failed = @($items | Where-Object { ([string]$_.status).ToLowerInvariant() -eq 'failed' })
+        if ($failed.Count -gt 0) {
+            foreach ($f in $failed) { Write-NbError "Source failed to process: $($f.title)" }
+        }
+        if ($busy.Count -eq 0) {
+            Write-NbInfo "All sources ready in notebook $NotebookId."
+            return ($failed.Count -eq 0)
+        }
+        Write-NbInfo "Waiting for $($busy.Count) source(s) to finish processing..."
+        Start-Sleep -Seconds 5
+    }
+    Write-NbWarn "Timed out after $TimeoutSeconds s waiting for sources to become ready in $NotebookId."
+    return $false
+}
+
 # Builds the source title from a file's path relative to the ingest root.
 # Falls back to the bare name when the file is not under the root.
 function Get-SourceTitle {
@@ -141,6 +183,7 @@ function Invoke-ManualIngest {
         $result = Add-OneSource -NotebookId $NotebookId -SourcePath $Path -Type 'url'
         if ($result.ExitCode -eq 0) {
             Write-NbInfo "Added URL: $Path"
+            [void]$script:TouchedNotebooks.Add($NotebookId)
             $success++
         } else {
             Write-NbError "Failed to add URL $Path : $((Get-NbFailureText $result))"
@@ -159,6 +202,7 @@ function Invoke-ManualIngest {
             $result = Add-OneSource -NotebookId $NotebookId -SourcePath $file.FullName -Type 'file' -Title $title
             if ($result.ExitCode -eq 0) {
                 Write-NbInfo "Added: $($file.FullName)"
+                [void]$script:TouchedNotebooks.Add($NotebookId)
                 Set-Uploaded -State $State -Key $key -File $file
                 Save-JsonState -State $State -Path $StateFile
                 $success++
@@ -189,6 +233,7 @@ function Invoke-ManualIngest {
             $result = Add-OneSource -NotebookId $NotebookId -SourcePath $file.FullName -Type 'file' -Title $title
             if ($result.ExitCode -eq 0) {
                 Write-NbInfo "Added: $($file.FullName)"
+                [void]$script:TouchedNotebooks.Add($NotebookId)
                 Set-Uploaded -State $State -Key $key -File $file
                 Save-JsonState -State $State -Path $StateFile
                 $success++
@@ -270,6 +315,7 @@ function Invoke-WatchTask {
         $result = Add-OneSource -NotebookId $notebookId -SourcePath $file.FullName -Type 'file' -Title $title
         if ($result.ExitCode -eq 0) {
             Write-NbInfo "Added: $($file.FullName)"
+            [void]$script:TouchedNotebooks.Add($NotebookId)
             Set-Uploaded -State $State -Key $key -File $file
             Save-JsonState -State $State -Path $StateFile
             $success++
@@ -355,6 +401,13 @@ else {
 
 Save-JsonState -State $state -Path $StateFile
 
+$waitOk = $true
+if ($Wait -and $script:TouchedNotebooks.Count -gt 0) {
+    foreach ($nbId in $script:TouchedNotebooks) {
+        if (-not (Wait-ForSourcesReady -NotebookId $nbId -TimeoutSeconds $WaitTimeoutSeconds)) { $waitOk = $false }
+    }
+}
+
 Write-Host ""
 Write-Host "Result: success $totalSuccess / skip $totalSkip / fail $totalFail"
 if ($allFailDetails.Count -gt 0) {
@@ -362,4 +415,4 @@ if ($allFailDetails.Count -gt 0) {
     foreach ($d in $allFailDetails) { Write-Host "  - $d" }
 }
 
-if ($totalFail -gt 0) { exit 1 } else { exit 0 }
+if ($totalFail -gt 0 -or -not $waitOk) { exit 1 } else { exit 0 }

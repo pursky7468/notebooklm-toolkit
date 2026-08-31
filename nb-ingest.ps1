@@ -97,10 +97,38 @@ function Set-Uploaded {
 
 # Adds one source to a notebook. Returns $true on success.
 function Add-OneSource {
-    param([string]$NotebookId, [string]$SourcePath, [string]$Type)
+    param([string]$NotebookId, [string]$SourcePath, [string]$Type, [string]$Title)
     $addArgs = @('source', 'add', $SourcePath, '-n', $NotebookId, '--type', $Type, '--json')
+    # Without an explicit title NotebookLM shows only the bare file name, so a
+    # nested tree collapses into a dozen sources all called 'job.md' and the
+    # folder that identified them is lost from every citation. Pass the path
+    # relative to the ingest root instead.
+    if (-not [string]::IsNullOrWhiteSpace($Title)) {
+        $addArgs += @('--title', $Title)
+    }
     $result = Invoke-NotebookLM -Arguments $addArgs
     return $result
+}
+
+# Builds the source title from a file's path relative to the ingest root.
+# Falls back to the bare name when the file is not under the root.
+function Get-SourceTitle {
+    param([System.IO.FileInfo]$File, [string]$RootPath)
+    if ([string]::IsNullOrWhiteSpace($RootPath)) { return $File.Name }
+    try {
+        $root = (Resolve-Path -LiteralPath $RootPath).Path.TrimEnd([char]92)
+        $full = $File.FullName
+        if ($full.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $rel = $full.Substring($root.Length).TrimStart([char]92)
+            if ($rel) { return $rel.Replace([char]92, [char]47) }
+        }
+    } catch {
+        # Never swallow this silently: a broken title just falls back to the
+        # bare file name, which looks fine but loses the folder that identifies
+        # the source in every citation.
+        Write-NbWarn "Could not derive a relative title for $($File.FullName); falling back to the file name. $($_.Exception.Message)"
+    }
+    return $File.Name
 }
 
 function Invoke-ManualIngest {
@@ -127,7 +155,8 @@ function Invoke-ManualIngest {
             Write-NbInfo "Skipped (already processed, unchanged): $($file.FullName)"
             $skip++
         } else {
-            $result = Add-OneSource -NotebookId $NotebookId -SourcePath $file.FullName -Type 'file'
+            $title = Get-SourceTitle -File $file -RootPath $Path
+            $result = Add-OneSource -NotebookId $NotebookId -SourcePath $file.FullName -Type 'file' -Title $title
             if ($result.ExitCode -eq 0) {
                 Write-NbInfo "Added: $($file.FullName)"
                 Set-Uploaded -State $State -Key $key -File $file
@@ -156,7 +185,8 @@ function Invoke-ManualIngest {
                 $skip++
                 continue
             }
-            $result = Add-OneSource -NotebookId $NotebookId -SourcePath $file.FullName -Type 'file'
+            $title = Get-SourceTitle -File $file -RootPath $Path
+            $result = Add-OneSource -NotebookId $NotebookId -SourcePath $file.FullName -Type 'file' -Title $title
             if ($result.ExitCode -eq 0) {
                 Write-NbInfo "Added: $($file.FullName)"
                 Set-Uploaded -State $State -Key $key -File $file
@@ -236,7 +266,8 @@ function Invoke-WatchTask {
             $skip++
             continue
         }
-        $result = Add-OneSource -NotebookId $notebookId -SourcePath $file.FullName -Type 'file'
+        $title = Get-SourceTitle -File $file -RootPath $Task.folder
+        $result = Add-OneSource -NotebookId $notebookId -SourcePath $file.FullName -Type 'file' -Title $title
         if ($result.ExitCode -eq 0) {
             Write-NbInfo "Added: $($file.FullName)"
             Set-Uploaded -State $State -Key $key -File $file

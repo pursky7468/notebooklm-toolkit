@@ -74,6 +74,26 @@ review 同時確認:全專案無任何 `notebook delete` 指令、憑證僅由�
 
 **工作流誠實性驗證:** 7 個來源中有 2 個實際無內容(r/MachineLearning 貼文已被版主刪除、HN 只抓到導覽列)。digest 在被問到時**正確指認這兩筆並未編造內容**,兩種模式皆然。
 
+## A 類實測:cv/companies 知識庫(2026-08-31)
+
+素材:`C:\GitSource\cv\companies` 的 28 份 markdown(6 家公司,各含 job / apply / cover_letter / interview / log)。**未包含** `99_公司機密_勿外流/` 與 `journal/`。
+
+| 步驟 | 結果 |
+|---|---|
+| `nb-ingest -Watch -TaskName cv-companies` | 首次 27/28,1 筆遇上游 503 |
+| 重跑 | skip 27 / success 1 —— **暫時性失敗自動重試,未重傳全部** |
+| `nb-inspect` | 28 筆,標題含公司路徑 |
+| `nb-digest`(4 題,預設模式) | 36,872 chars,135 筆引用 |
+
+**這次發現並修掉的問題:**
+
+1. **巢狀目錄的來源標題全部塌成檔名** —— 6 個 `_company.md`、9 個 `job.md`,公司身分完全遺失,引用會變成無法辨識的 `[1] job.md`。修法:`Get-SourceTitle` 以 ingest 根目錄為基準計算相對路徑,透過 `source add --title` 傳入。
+2. **修法本身第一次寫壞而且被靜默吞掉** —— `-replace '\', '/'` 的單一反斜線是無效 regex,PowerShell 拋錯後被空的 `catch { }` 吃掉,退回檔名,看起來「正常」。改用 `String.Replace([char]92, [char]47)` 避開跳脫,並讓 catch 發出 WARN 而非靜默。
+
+**上游偶發不一致**:28 筆中有 1 筆(`德倫思管理顧問/aoi-sw-lead/apply.md`)標題有送出但未被套用,顯示為裸 `apply.md`。本地函式未拋錯(無 WARN),判定為上游行為,不影響內容可用性。
+
+**跨文件綜合的實際價值**(單檔閱讀找不到的):digest 指出多處投遞素材的前後不一致 —— 同團隊兩職缺的定位衝突、cover letter 早期草稿的「full cycle」過度宣稱、「MES 交握協議由我定義」的角色誇大、年資敘述精確度落差。全部附引用可回溯到具體檔案。
+
 ## 已知未驗證項
 
 - `nb-doctor` exit 2(RPC / 解碼失敗)與 exit 3(上游有新版)兩條分支無法在真實環境自然觸發,僅以假 CLI 替身驗過分支邏輯。真正觸發時的行為需待上游實際改版才能確認

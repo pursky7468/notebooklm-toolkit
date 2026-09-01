@@ -94,6 +94,40 @@ NotebookLM 預設回答很長。`-Brief` 會在每個問題後附加簡潔指令
 
 適合掛排程。輸出**不含**任何 cookie / token / 憑證欄位值,只有檔案路徑與有效性判定。
 
+## connectors/ — 外部資料來源
+
+工具包本身不知道素材從哪來。`connectors/` 放把特定資料源接進來的腳本。
+
+### B 類:AI 新聞週報
+
+```powershell
+# 累積到既有 notebook(建議)
+.\connectors\Invoke-WeeklyAiNews.ps1 -Notebook <id> -PerDay 2 -Days 7
+
+# 或每批開新的
+.\connectors\Invoke-WeeklyAiNews.ps1 -NewNotebook -PerDay 2
+```
+
+流程:憑證前置檢查 → 取本週 URL → `nb-ingest -Wait` → `nb-inspect`。跑完印出 notebook 描述,**由 agent 讀了再決定要問什麼**,然後自行呼叫 `nb-digest`。
+
+`Get-AiNewsUrls.py` 透過 `x-ai-news-researcher` 自己的 `NewsStore.query_posts` 取資料,排序慣例(`relevance_score` desc)留在該專案裡,不在這邊重寫 SQL。
+
+```powershell
+python .\connectors\Get-AiNewsUrls.py --days 7 --per-day 2          # 每行一個 URL
+python .\connectors\Get-AiNewsUrls.py --date-from 2026-08-22 --date-to 2026-08-28 --json
+python .\connectors\Get-AiNewsUrls.py --days 14 --top 20            # 整段取前 20 名
+```
+
+**為什麼不用 MCP 拿資料**:那個專案的 MCP tool 全是普通 Python 函式加 `@mcp.tool()`,可以直接 import 呼叫,輸出完全相同。走 MCP 協定等於把模型放進迴圈,每次排程都燒 token —— 正好違背這個工具包的目的。
+
+**與該專案既有週報的分工**:它的 `get_weekly_summary` 已經產出一份完成的週報(「這週發生什麼」)。NotebookLM 這邊放的是**原始文章全文的可查詢語料庫**,能回答週報答不了的追問;語料庫跨週累積後,還能問「這個主題是從哪一週開始出現的」。
+
+### 憑證自我修復
+
+`Invoke-WeeklyAiNews.ps1` 開頭會跑 `nb-doctor`,回 exit 1 就自動執行 `notebooklm login` 再重驗。**只要瀏覽器 profile 的 Google session 還有效,`notebooklm login` 是完全非互動的**(直接重新匯出 cookie),所以排程能自己救回過期的憑證。只有連瀏覽器 profile 都失效時才需要人。
+
+背景:`__Secure-1PSIDRTS` 這個輪替 token **只有約 12 分鐘壽命**,錯過續期就會脫鉤。實測一個工作階段內失效過三次(併行呼叫容易搶輪替);單行程循序執行的排程風險低很多,但前置檢查仍值得留著。
+
 ## 設定
 
 複製 `config.example.json` 為 `config.json` 後填寫:

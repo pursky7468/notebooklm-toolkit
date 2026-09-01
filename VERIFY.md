@@ -116,6 +116,31 @@ review 同時確認:全專案無任何 `notebook delete` 指令、憑證僅由�
 
 2. **先前對 `-Brief` 的結論過度斷言** —— 原記載「brief 模式必然失去引用溯源」。本次 podcast 測試(全新對話)brief 模式正常回傳 10/6/4 筆引用,推翻該結論。AI 週報那次回傳 `references: 0` 時對話已進行到第 12 輪,推測與對話輪次有關但未確證。README 與執行時警示均已改為「不保證存在,需要保證時不要用 -Brief」。
 
+## B 類實測:AI 新聞週報 pipeline(2026-09-01)
+
+`connectors/Invoke-WeeklyAiNews.ps1 -NewNotebook -PerDay 2 -Days 7`,端到端 143 秒。
+
+| 步驟 | 結果 |
+|---|---|
+| 憑證前置檢查 | `nb-doctor` exit 0,略過重新認證 |
+| 取 URL | 14 筆(2026-08-22~28,每日前 2 名) |
+| 建 notebook | `create --json` 回 `{notebook:{id}}` |
+| `nb-ingest -Wait` | 13/14 成功,1 筆 HN 遇 `RPCError rpc_code=9` |
+| `nb-inspect` | 印出來源清單供 agent 判斷 |
+| `nb-digest -Brief`(4 題) | 3,937 bytes,4 題中 2 題含引用 |
+
+**MCP vs 直接 import 的實測結論**:該專案的 MCP tool 全是普通 Python 函式加 `@mcp.tool()`。`import mcp_server` 後直接呼叫 `get_trending_tools(days=14, limit=3)`,輸出與透過 MCP 協定呼叫**逐字相同**,但零 token。連接器因此改用 `NewsStore.query_posts`,把排序慣例留在來源專案。
+
+**這次發現並修掉的問題:**
+
+1. **`-Wait` 的失敗狀態字串比對錯誤** —— 我寫 `'failed'`,上游實際用 `'error'`。結果 notebook 內有一筆 error 來源時仍印「All sources ready」並回傳成功,正是 `-Wait` 該防止的靜默成功。已改為比對 `error` / `failed` 兩者,並逐筆列出失敗來源的標題。修正後實測:16 筆中偵測到 2 筆 error,exit 1。
+
+2. **add 回報失敗仍會留下空殼來源** —— HN 那筆 `RPCError rpc_code=9` 之後,`source list` 仍出現該筆,`status: "error"`,標題是裸 URL。因為 state 只記錄成功,重跑會再建一筆重複的空殼。目前處置:`-Wait` 會明確報出來,由使用者以 `notebooklm source delete <id>` 清除。未自動刪除 —— 自動刪別人的來源風險高於收益。
+
+**憑證壽命的實測數據**:`__Secure-1PSIDRTS` 輪替 token 到期時間僅約 **0.2 小時(12 分鐘)**,其餘 cookie 為 8760~9555 小時。一個工作階段內憑證失效三次,皆發生在並行呼叫(PowerShell/Bash 交錯、MCP 探測)期間 —— 輪替會使前一個 token 失效,兩個行程同時輪替就有一個被踢掉。單行程循序的排程風險低很多。
+
+**排程自我修復**:`notebooklm login` 在瀏覽器 profile 的 Google session 仍有效時**完全非互動**(直接重新匯出 cookie,印「Already logged in」)。因此 pipeline 開頭以 `nb-doctor` 判定、exit 1 時自動 login 再重驗,可在無人值守下救回過期憑證。
+
 ## 已知未驗證項
 
 - `nb-doctor` exit 2(RPC / 解碼失敗)與 exit 3(上游有新版)兩條分支無法在真實環境自然觸發,僅以假 CLI 替身驗過分支邏輯。真正觸發時的行為需待上游實際改版才能確認

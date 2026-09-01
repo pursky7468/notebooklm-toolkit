@@ -137,13 +137,22 @@ function Wait-ForSourcesReady {
                      @($parsed.sources)
                  } else { @($parsed) }
         $busy = @($items | Where-Object { $pendingStates -contains ([string]$_.status).ToLowerInvariant() })
-        $failed = @($items | Where-Object { ([string]$_.status).ToLowerInvariant() -eq 'failed' })
-        if ($failed.Count -gt 0) {
-            foreach ($f in $failed) { Write-NbError "Source failed to process: $($f.title)" }
-        }
+        # Upstream reports a broken source as 'error', not 'failed'. Matching
+        # only 'failed' made this report every source ready while one sat in
+        # an error state, which is exactly the silent-success case -Wait is
+        # supposed to prevent.
+        $badStates = @('error', 'failed')
+        $failed = @($items | Where-Object { $badStates -contains ([string]$_.status).ToLowerInvariant() })
         if ($busy.Count -eq 0) {
-            Write-NbInfo "All sources ready in notebook $NotebookId."
-            return ($failed.Count -eq 0)
+            if ($failed.Count -gt 0) {
+                foreach ($f in $failed) {
+                    Write-NbError "Source is in an error state and has no usable content: $($f.title)"
+                }
+                Write-NbError "$($failed.Count) of $($items.Count) source(s) failed to process in notebook $NotebookId."
+                return $false
+            }
+            Write-NbInfo "All $($items.Count) source(s) ready in notebook $NotebookId."
+            return $true
         }
         Write-NbInfo "Waiting for $($busy.Count) source(s) to finish processing..."
         Start-Sleep -Seconds 5

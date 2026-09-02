@@ -14,7 +14,12 @@
 
 . (Join-Path $PSScriptRoot '..\_common.ps1')
 
-$pythonExe = 'C:\Users\User\AppData\Local\Programs\Python\Python312\python.exe'
+# Resolve python from PATH rather than hardcoding one machine's install path,
+# so this test runs for anyone who clones the repo.
+$pythonCmd = Get-Command python -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $pythonCmd) { $pythonCmd = Get-Command python3 -ErrorAction SilentlyContinue | Select-Object -First 1 }
+if (-not $pythonCmd) { throw "python not found on PATH; this test needs it to run the echo script." }
+$pythonExe = $pythonCmd.Source
 $echoScript = $args[0]
 if (-not $echoScript) {
     throw "Usage: Test-ArgPassthrough.ps1 <path-to-echo_argv_stdin.py>"

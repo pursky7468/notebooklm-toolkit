@@ -1,7 +1,7 @@
 # 驗證紀錄
 
 **最後更新**:2026-08-30
-**驗證環境**:Windows 11、PowerShell 5.1、notebooklm-py 0.8.1、帳號 purskyrone@gmail.com
+**驗證環境**:Windows 11、PowerShell 5.1、notebooklm-py 0.8.1、一般 Google 個人帳號
 
 驗證分兩輪。第一輪由實作 agent 執行,因憑證 ACL 事故無法呼叫真實 API,多數項目以「假 CLI 替身」驗證。
 第二輪(本文)由主對話在憑證修復後,以**真實 NotebookLM API** 重跑,並修掉真實 API 才暴露出來的問題。
@@ -74,25 +74,25 @@ review 同時確認:全專案無任何 `notebook delete` 指令、憑證僅由�
 
 **工作流誠實性驗證:** 7 個來源中有 2 個實際無內容(r/MachineLearning 貼文已被版主刪除、HN 只抓到導覽列)。digest 在被問到時**正確指認這兩筆並未編造內容**,兩種模式皆然。
 
-## A 類實測:cv/companies 知識庫(2026-08-31)
+## A 類實測:巢狀文件樹知識庫(2026-08-31)
 
-素材:`C:\GitSource\cv\companies` 的 28 份 markdown(6 家公司,各含 job / apply / cover_letter / interview / log)。**未包含** `99_公司機密_勿外流/` 與 `journal/`。
+素材:一個巢狀的私人文件樹,28 份 markdown 分佈在 6 個子目錄下,**每個子目錄裡的檔名重複**(各自都有 `_company.md` / `job.md` / `apply.md` / `log.md` 這類同名檔)。這個形狀正是暴露下述問題的關鍵。
 
 | 步驟 | 結果 |
 |---|---|
-| `nb-ingest -Watch -TaskName cv-companies` | 首次 27/28,1 筆遇上游 503 |
+| `nb-ingest -Watch` | 首次 27/28,1 筆遇上游 503 |
 | 重跑 | skip 27 / success 1 —— **暫時性失敗自動重試,未重傳全部** |
-| `nb-inspect` | 28 筆,標題含公司路徑 |
+| `nb-inspect` | 28 筆,標題含相對路徑 |
 | `nb-digest`(4 題,預設模式) | 36,872 chars,135 筆引用 |
 
 **這次發現並修掉的問題:**
 
-1. **巢狀目錄的來源標題全部塌成檔名** —— 6 個 `_company.md`、9 個 `job.md`,公司身分完全遺失,引用會變成無法辨識的 `[1] job.md`。修法:`Get-SourceTitle` 以 ingest 根目錄為基準計算相對路徑,透過 `source add --title` 傳入。
-2. **修法本身第一次寫壞而且被靜默吞掉** —— `-replace '\', '/'` 的單一反斜線是無效 regex,PowerShell 拋錯後被空的 `catch { }` 吃掉,退回檔名,看起來「正常」。改用 `String.Replace([char]92, [char]47)` 避開跳脫,並讓 catch 發出 WARN 而非靜默。
+1. **巢狀目錄的來源標題全部塌成檔名** —— 6 個 `_company.md`、9 個 `job.md` 上傳後只剩裸檔名,目錄結構(也就是辨識身分的那一層)完全遺失,引用會變成無法回溯的 `[1] job.md`。修法:`Get-SourceTitle` 以 ingest 根目錄為基準計算相對路徑,透過 `source add --title` 傳入。
+2. **修法本身第一次寫壞而且被靜默吞掉** —— `-replace` 的單一反斜線是無效 regex,PowerShell 拋錯後被空的 `catch { }` 吃掉,退回檔名,看起來「正常」。改用 `String.Replace([char]92, [char]47)` 避開跳脫,並讓 catch 發出 WARN 而非靜默。
 
-**上游偶發不一致**:28 筆中有 1 筆(`德倫思管理顧問/aoi-sw-lead/apply.md`)標題有送出但未被套用,顯示為裸 `apply.md`。本地函式未拋錯(無 WARN),判定為上游行為,不影響內容可用性。
+**上游偶發不一致**:28 筆中有 1 筆標題有送出但未被套用,顯示為裸檔名。本地函式未拋錯(無 WARN),判定為上游行為,不影響內容可用性。
 
-**跨文件綜合的實際價值**(單檔閱讀找不到的):digest 指出多處投遞素材的前後不一致 —— 同團隊兩職缺的定位衝突、cover letter 早期草稿的「full cycle」過度宣稱、「MES 交握協議由我定義」的角色誇大、年資敘述精確度落差。全部附引用可回溯到具體檔案。
+**跨文件綜合的實際價值**:對這批文件提問「同一份主張在不同檔案之間有沒有前後不一致」,digest 指出了數處單看任一份檔案都看不出來的矛盾,並附引用回溯到具體檔案。這類自我一致性檢查是把整個語料庫一起看才做得到的,也是選用 NotebookLM 而非一次性餵檔的主要理由。
 
 ## C 類實測:podcast 音訊(2026-08-31)
 

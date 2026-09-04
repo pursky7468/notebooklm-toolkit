@@ -23,10 +23,13 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import sys
 from pathlib import Path
 
-DEFAULT_BACKEND = Path("C:/GitSource/x-ai-news-researcher/backend")
+# No hardcoded default: this points at a separate project that lives
+# wherever the user cloned it. Set AI_NEWS_BACKEND or pass --backend.
+DEFAULT_BACKEND = Path(os.environ["AI_NEWS_BACKEND"]) if os.environ.get("AI_NEWS_BACKEND") else None
 
 
 def build_store(backend: Path):
@@ -52,7 +55,9 @@ def daterange(a: dt.date, b: dt.date):
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--backend", type=Path, default=DEFAULT_BACKEND)
+    ap.add_argument("--backend", type=Path, default=DEFAULT_BACKEND,
+                    help="path to x-ai-news-researcher/backend "
+                         "(or set AI_NEWS_BACKEND)")
     ap.add_argument("--days", type=int, help="look back N days from the newest post in the DB")
     ap.add_argument("--date-from", dest="date_from")
     ap.add_argument("--date-to", dest="date_to")
@@ -62,6 +67,8 @@ def main() -> int:
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
+    if not args.backend:
+        sys.exit("pass --backend <path-to-x-ai-news-researcher/backend> or set AI_NEWS_BACKEND")
     store = build_store(args.backend)
 
     # Anchor on the newest post rather than today: the fetcher may be behind,

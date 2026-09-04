@@ -1,11 +1,34 @@
 # notebooklm-toolkit
 
-把 Google NotebookLM 包成**確定性 CLI 工具包**。大型文件 / 音訊 / 影片先進 NotebookLM 做彙整,只把摘要交給 Claude,原始素材永不進入 Claude context。
+把 Google NotebookLM 包成**確定性 CLI 工具包**。大型文件 / 音訊 / 影片先進 NotebookLM 做彙整,只把摘要交給 LLM agent,原始素材永不進入 agent 的 context。
 
-日常操作**零 Claude token**。agent 只在兩個點介入:
+日常操作**零 LLM token**。agent 只在兩個點介入:讀最小結構化描述後**決定該問什麼問題**,以及**工具壞掉時維護**。
 
-1. **決定該問什麼問題** —— 讀 `nb-inspect` 的輸出(只有標題與 source 清單,體積與素材大小無關)
-2. **工具壞掉時維護** —— 由 `nb-doctor` 的 exit code 觸發
+---
+
+> ## ⚠️ 先讀這段再決定要不要用
+>
+> **這個工具依賴非官方的逆向工程套件。** 底層 [`notebooklm-py`](https://github.com/teng-lin/notebooklm-py) 走的是 Google 內部的 `batchexecute` RPC 端點 —— 也就是 NotebookLM 網頁前端自己在打的那個介面。沒有官方 API、沒有 API key、沒有規格文件。
+>
+> **三件你必須知道的事:**
+>
+> 1. **它會壞。** Google 改前端就可能失效,而且沒有任何保證或修復時程。同類的瀏覽器自動化專案就在 2026-07 的改名事件中整個死掉。
+> 2. **憑證是你的完整 Google 帳號 session。** 存在 `~/.notebooklm/profiles/default/storage_state.json`,**明文 JSON**,而且 **session cookie 會繞過 2FA**。拿到那個檔案等於登入你的 Google 帳號。**強烈建議用次要帳號。**
+>    緊急撤銷:`myaccount.google.com` → 安全性 → 登出所有工作階段。
+> 3. **使用自動化存取可能違反 Google 服務條款**,後果是帳號停權。條款是 Google 與**你**之間的契約 —— 執行這個工具的人自行承擔。
+>
+> **不要使用 master-token / `[headless]` 模式。** 上游那條路徑會冒充 Google Home 的 Android app 來換取長期憑證,那是範圍極廣、難以撤銷的裝置級 token。本工具包不使用它,你也不該開。
+>
+> ## 📌 這個專案的定位
+>
+> 這是**特定時間點(2026-09)的實作筆記與參考實作**,不是長期維護的產品。
+>
+> - **不承諾維護**。Google 改版讓它失效時,可能不會有修復。
+> - **沒有做逆向工程** —— RPC 逆向全部在上游 `notebooklm-py`(MIT)。這裡只有包裝腳本。
+> - **Windows PowerShell 5.1 專用**。跨平台請直接用上游的 Python CLI。
+> - 真正的內容在 [`VERIFY.md`](VERIFY.md)(踩過的坑與實測數據)與 [`decisions/`](decisions/)(為什麼這樣選)。**腳本只是佐證。**
+
+---
 
 ## 前置需求
 
@@ -113,6 +136,9 @@ NotebookLM 預設回答很長。`-Brief` 會在每個問題後附加簡潔指令
 `Get-AiNewsUrls.py` 透過 `x-ai-news-researcher` 自己的 `NewsStore.query_posts` 取資料,排序慣例(`relevance_score` desc)留在該專案裡,不在這邊重寫 SQL。
 
 ```powershell
+# 先指定來源專案的 backend 路徑(或每次呼叫帶 --backend)
+$env:AI_NEWS_BACKEND = 'D:\path\to\x-ai-news-researcher\backend'
+
 python .\connectors\Get-AiNewsUrls.py --days 7 --per-day 2          # 每行一個 URL
 python .\connectors\Get-AiNewsUrls.py --date-from 2026-08-22 --date-to 2026-08-28 --json
 python .\connectors\Get-AiNewsUrls.py --days 14 --top 20            # 整段取前 20 名

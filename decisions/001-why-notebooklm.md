@@ -11,8 +11,8 @@
 | 方案 | 官方 | 資料被訓練 | 語料庫上限 | 音訊/影片 RAG | 否決理由 |
 |---|---|---|---|---|---|
 | **Gemini API File Search**(managed RAG) | ✅ GA | **會** | 免費 tier **1 GB** | ❌ 明文不支援 | 見下 |
-| Gemini API Files API + 長 context | ✅ | **會** | 20GB/project、48hr TTL | 可(直塞非檢索) | 非 RAG,跨文件綜合品質不足 |
-| `agy`(Gemini via Antigravity CLI) | ✅ OAuth | 否 | 受 context window 限 | 一次性餵檔 | 無檢索層,大型彙整品質不足 |
+| Gemini API Files API + 長 context | ✅ | **會** | 20GB/project、48hr TTL | 可(直塞,非檢索) | 條款同上即否決;**未實測品質** |
+| `agy`(Gemini via Antigravity CLI) | ✅ OAuth | 否 | 受 context window 限 | 一次性餵檔 | 語料庫超過 context window 即不適用;**未與 NotebookLM 做對照實測** |
 | Gemini Notebook Enterprise API | ✅ | 否 | 大 | 支援 | 需 Gemini Enterprise 授權,使用者沒有 |
 | 自寫 Playwright UI 自動化 | ❌ | 否 | 大 | 支援 | 壞得更頻繁,且只有自己能修 |
 | **notebooklm-py**(選用) | ❌ | **否** | 大 | ✅ 原生 | — |
@@ -33,7 +33,11 @@
 
 本專案處理的素材是使用者自己的非公開文件,隱私權重高於穩定性,故選 NotebookLM。若你的素材本來就是公開內容,這個取捨會反過來 —— 官方 API 更穩定,且沒有隱私顧慮。
 
-其次,使用者實測 NotebookLM 在大型多來源彙整的品質明顯優於一次性餵檔 —— 差距來自其 RAG **檢索層**(語料庫可超過 context window、跨文件綜合、引用溯源),不是模型差異。NotebookLM 後端也是 Gemini。
+其次是使用體驗上的比較,但這一項要標清楚證據等級:
+
+- **主觀、未做對照實驗**:使用者實測認為 NotebookLM 在大型多來源彙整上優於一次性餵檔給 LLM。這是使用印象,不是量測。
+- **不知道原因**:Google 未公開 NotebookLM 的架構,官方說明頁也沒有交代底層模型。任何「差距來自檢索層而非模型」之類的歸因都是推測,本文件不主張。
+- **本專案實際驗證過的只有兩點**:(a) 跨文件綜合 —— 同一案件的上下兩集音訊,提問「上集線索到下集如何揭曉」三條皆答對且引用指向正確集數;(b) 引用溯源 —— 回答帶可回溯的引用。這兩點才是選型的具體依據。
 
 ## 已知代價與緩解
 
